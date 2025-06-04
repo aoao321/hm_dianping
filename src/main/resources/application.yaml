@@ -1,13 +1,16 @@
+
+
+
 server:
   port: 8081
 spring:
   application:
     name: hmdp
   datasource:
-    driver-class-name: com.mysql.jdbc.Driver
+    driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/hm_dianping?useSSL=false&serverTimezone=UTC
     username: root
-    password: 040731
+    password: '040731'
   redis:
     host: 127.0.0.1
     port: 6379

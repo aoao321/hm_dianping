@@ -10,7 +10,7 @@ public class PasswordEncoder {
 
     public static String encode(String password) {
         // 生成盐
-        String salt = RandomUtil.randomString(20);
+        String salt = "heima";
         // 加密
         return encode(password,salt);
     }
