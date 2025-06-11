@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Slf4j
 @Data
-@ConfigurationProperties(prefix = "alisms")
+@ConfigurationProperties(prefix = "ali.sms")
 public class AliSmsUtils {
 
     private String endpoint;
