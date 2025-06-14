@@ -48,7 +48,8 @@ public class SimpleRedisLock implements ILock {
         //获取当前线程标识
         String threadId = ID_PREFIX+Thread.currentThread().getName();
 
-        stringRedisTemplate.execute(UNLOCK_SCRIPT,
+        stringRedisTemplate.execute(
+                UNLOCK_SCRIPT,
                 Collections.singletonList(KEY_PREFIX + name),
                 threadId
         );
