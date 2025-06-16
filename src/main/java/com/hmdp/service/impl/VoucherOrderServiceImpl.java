@@ -1,5 +1,6 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.VoucherOrder;
@@ -10,21 +11,30 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.core.io.ClassPathResource;
+
+import org.springframework.data.redis.connection.stream.*;
+
+import org.springframework.data.redis.core.StreamOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 import static com.hmdp.utils.RedisConstants.SECKILL_STOCK_KEY;
@@ -38,7 +48,7 @@ import static com.hmdp.utils.RedisConstants.SECKILL_STOCK_KEY;
  * @since 2021-12-22
  */
 @Service
-@EnableAspectJAutoProxy(exposeProxy = true)
+
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
     @Autowired
@@ -51,19 +61,65 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private StringRedisTemplate stringRedisTemplate;
     @Autowired
     private RedissonClient redissonClient;
+    @Autowired
+    private ObjectProvider<IVoucherOrderService> proxyProvider;
 
-    private BlockingQueue<VoucherOrder> orderQueue = new ArrayBlockingQueue<VoucherOrder>(1024*1024);
+    //private BlockingQueue<VoucherOrder> orderQueue = new ArrayBlockingQueue<VoucherOrder>(1024*1024);
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
     private IVoucherOrderService proxy;
 
     @PostConstruct
     private void init() {
-        SECKILL_ORDER_EXECUTOR.submit(()->{
+        SECKILL_ORDER_EXECUTOR.submit(() -> {
+            this.proxy = proxyProvider.getObject();
+            String queueName = "stream.orders";
             while (true) {
-                // 获取队列中的订单信息
-                VoucherOrder order = orderQueue.take();
-                // 创建订单
-                this.proxy.createOrder(order);
+                try {
+                    // 消息获取队列中的订单信息
+                    //VoucherOrder order = orderQueue.take();
+
+                    // redis获取消息队列
+                    List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
+                            Consumer.from("g1", "c1"),
+                            StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
+                            StreamOffset.create(queueName, ReadOffset.lastConsumed())
+                    );
+                    // 如果失败了，说明没有消息，进入下一次循环
+                    if (list==null||list.size()==0) {
+                        continue;
+                    }
+                    // 解析消息
+                    MapRecord<String, Object, Object> record = list.get(0);
+                    Map<Object, Object> map = record.getValue();
+                    VoucherOrder order = BeanUtil.fillBeanWithMap(map, new VoucherOrder(), true);
+                    // 成功，创建订单
+                    this.proxy.createOrder(order);
+                    // ACK确认 SACK stream.orders g1 id
+                    stringRedisTemplate.opsForStream().acknowledge(queueName,"g1",record.getId());
+                } catch (Exception e) {// 抛出异常，则需要检查pendinglist
+                    while(true){
+                        try {
+                            List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
+                                    Consumer.from("g1", "c1"),
+                                    StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
+                                    StreamOffset.create(queueName, ReadOffset.from("0"))
+                            );
+                            if (list == null || list.size() == 0) {
+                                break;
+                            }
+                            // 解析消息
+                            MapRecord<String, Object, Object> record = list.get(0);
+                            Map<Object, Object> map = record.getValue();
+                            VoucherOrder order = BeanUtil.fillBeanWithMap(map, new VoucherOrder(), true);
+                            // 成功，创建订单
+                            this.proxy.createOrder(order);
+                            // ACK确认 SACK stream.orders g1 id
+                            stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
+                        } catch (Exception ex) {
+                            Thread.sleep(200);
+                        }
+                    }
+                }
             }
         });
     }
@@ -79,25 +135,29 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Override
     public Result seckillVoucher(Long voucherId) {
         Long userId = UserHolder.getUser().getId();
+        Long orderId = redisIdWorker.nextId("order");
         // 执行lua脚本
         Long result = stringRedisTemplate.execute(SECKILL_SCRIPT,
                 Collections.emptyList(),
                 voucherId.toString(),
-                userId.toString());
+                userId.toString(),
+                orderId.toString()
+                );
         // 判断结果
         int i = result.intValue();
         // 不为0，代表没有资格购买
         if (result != 0) {
             return Result.fail(i ==1 ? "库存不足":"已经下过单");
         }
-        long orderId = redisIdWorker.nextId("order");
+
         //TODO 为0，保存下单信息到阻塞队列
-        VoucherOrder voucherOrder = new VoucherOrder();
-        voucherOrder.setVoucherId(voucherId);
-        voucherOrder.setId(redisIdWorker.nextId("order"));
-        voucherOrder.setUserId(userId);
+//        VoucherOrder voucherOrder = new VoucherOrder();
+//        voucherOrder.setVoucherId(voucherId);
+//        voucherOrder.setId(redisIdWorker.nextId("order"));
+//        voucherOrder.setUserId(userId);
         // 创建阻塞队列
-        orderQueue.add(voucherOrder);
+        //orderQueue.add(voucherOrder);
+
         //返回订单id
         return Result.ok(orderId);
     }
@@ -147,3 +207,4 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         save(order);
     }
 }
+

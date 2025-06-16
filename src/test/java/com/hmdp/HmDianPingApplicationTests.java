@@ -1,5 +1,8 @@
 package com.hmdp;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.json.JSONObject;
+import com.hmdp.dto.Result;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.hmdp.service.impl.ShopServiceImpl;
@@ -72,6 +75,18 @@ class HmDianPingApplicationTests {
     @Test
     void test() {
         System.out.println(PasswordEncoder.encode("123456"));
-
     }
+
+    @Test
+    void testShop() throws InterruptedException {
+        shopService.saveShopToRedis(1l,10l);
+    }
+
+    @Test
+    void testQuery(){
+        Result result = shopService.queryById(1l);
+        System.out.println(result);
+    }
+
+
 }

@@ -68,6 +68,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         //发送验证码到用户手机号上
         aliSmsUtils.sendVerificationCode(phone,code);
+        log.info("code:",code);
         return Result.ok();
     }
 
@@ -130,6 +131,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     }
 
     private Result loginByPassword(LoginFormDTO loginForm, HttpSession session) {
+        if (loginForm.getPassword() == null) {
+            return Result.fail("请输入密码");
+        }
         //根据手机号查询数据库中是否存在该用户
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("phone", loginForm.getPhone());

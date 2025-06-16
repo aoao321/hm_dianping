@@ -7,6 +7,7 @@
 -- 参数列表
 local voucherId = ARGV[1]
 local userId = ARGV[2]
+local id = ARGV[3]
 
 -- 数据key
 local stockKey = 'seckill:stock:'.. voucherId
@@ -27,4 +28,6 @@ end
 redis.call('incrby',stockKey,-1)
 -- 加入set集合中
 redis.call('sadd',orderKey,userId)
+-- 加入消息队列，等消费者执行 XADD stream.orders * k1 v1 k2 v2
+redis.call('xadd','stream.orders','*','voucherId',voucherId,'userId',userId,'id',id)
 return 0

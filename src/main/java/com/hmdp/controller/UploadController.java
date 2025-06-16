@@ -26,12 +26,13 @@ public class UploadController {
     public Result uploadImage(@RequestParam("file") MultipartFile image) {
         //获取文件旧的名称
         String originalFilename = image.getOriginalFilename();
-        //获取后缀
-        String suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
+        //生成新名字
+        String fileName = createNewFileName(originalFilename);
         try {
             //获取文件位置
-            String filePath = ossUtil.upload(image.getBytes(), UUID.randomUUID().toString() + suffix);
-            return Result.ok(filePath);
+            //String filePath = ossUtil.upload(image.getBytes(), UUID.randomUUID().toString() + suffix);
+            image.transferTo(new File(SystemConstants.IMAGE_UPLOAD_DIR,fileName));
+            return Result.ok(fileName);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
