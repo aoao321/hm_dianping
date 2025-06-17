@@ -155,7 +155,6 @@ public class BlogController {
 
     private void isBlogLiked(Blog blog) {
         String key = RedisConstants.BLOG_LIKED_KEY + blog.getId();
-
         // 先检查用户是否登录
         UserDTO user = UserHolder.getUser();
         if (user == null) {
@@ -166,7 +165,7 @@ public class BlogController {
         // 用户已登录，检查是否点赞
         Long userId = user.getId();
         Double score = stringRedisTemplate.opsForZSet().score(key, userId.toString());
-        blog.setLiked(score==null ? 0 : 1);
+        blog.setLiked(score == null ? 0 : 1);
     }
 
     @GetMapping("/likes/{id}")
