@@ -9,8 +9,11 @@ import com.hmdp.entity.User;
 import com.hmdp.entity.UserInfo;
 import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
+import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -34,6 +37,9 @@ public class UserController {
 
     @Resource
     private IUserInfoService userInfoService;
+
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
 
     /**
      * 发送手机验证码
@@ -62,7 +68,10 @@ public class UserController {
      */
     @PostMapping("/logout")
     public Result logout(){
+        Long id = UserHolder.getUser().getId();
+        User user = userService.getById(id);
         UserHolder.removeUser();
+        stringRedisTemplate.delete(RedisConstants.LOGIN_CODE_KEY + user.getPhone());
         return Result.ok();
     }
 
